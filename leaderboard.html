@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Warriors</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; background: #0f0c29; min-height:100vh; padding:30px 16px; }
+  h1 { text-align:center; font-size:26px; font-weight:700; color:#fff; margin-bottom:4px; letter-spacing:2px; text-transform:uppercase; }
+  .subtitle { text-align:center; color:#aaa; font-size:13px; margin-bottom:28px; }
+  .podium-wrap { max-width:680px; margin:0 auto 24px; }
+  .podium { display:flex; align-items:flex-end; justify-content:center; gap:12px; flex-wrap:wrap; }
+  .pod { text-align:center; padding:16px 12px 12px; border-radius:12px 12px 0 0; min-width:110px; max-width:150px; flex:1; }
+  .pod.first { background:rgba(255,215,0,0.15); border:1px solid rgba(255,215,0,0.4); padding-top:28px; }
+  .pod.second { background:rgba(192,192,192,0.1); border:1px solid rgba(192,192,192,0.3); }
+  .pod.third { background:rgba(205,127,50,0.1); border:1px solid rgba(205,127,50,0.3); }
+  .pod-medal { font-size:28px; margin-bottom:6px; }
+  .pod-name { font-size:13px; font-weight:700; color:#fff; }
+  .pod-ref { font-size:12px; color:#aaa; margin-top:3px; }
+  .pod-link { display:inline-block; margin-top:8px; font-size:11px; color:#a5b4fc; text-decoration:none; border:1px solid rgba(99,102,241,0.4); background:rgba(99,102,241,0.15); padding:3px 10px; border-radius:20px; }
+  .table-wrap { max-width:680px; margin:0 auto; background:rgba(255,255,255,0.05); border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); }
+  .t-head { display:grid; grid-template-columns:40px 1fr 80px 120px; padding:10px 18px; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .t-head span { font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; font-weight:500; }
+  .t-row { display:grid; grid-template-columns:40px 1fr 80px 120px; align-items:center; padding:10px 18px; border-bottom:1px solid rgba(255,255,255,0.05); transition:background 0.15s; }
+  .t-row:last-child { border-bottom:none; }
+  .t-row:hover { background:rgba(255,255,255,0.05); }
+  .t-rank { font-size:13px; color:#666; font-weight:500; }
+  .t-name { font-size:14px; font-weight:600; color:#fff; }
+  .t-ref-num { font-size:13px; font-weight:600; color:#fff; }
+  .t-bar { height:4px; background:rgba(255,255,255,0.08); border-radius:2px; margin-top:4px; }
+  .t-fill { height:4px; background:#7F77DD; border-radius:2px; }
+  .t-btn { font-size:11px; color:#a5b4fc; text-decoration:none; border:1px solid rgba(99,102,241,0.4); background:rgba(99,102,241,0.15); padding:4px 12px; border-radius:20px; white-space:nowrap; display:inline-block; }
+  .sep { text-align:center; font-size:11px; color:#555; padding:8px 0; background:rgba(0,0,0,0.2); border-bottom:1px solid rgba(255,255,255,0.05); letter-spacing:1px; }
+  .loading { text-align:center; padding:40px; color:#888; font-size:14px; }
+</style>
+</head>
+<body>
+<h1>🏆 Leaderboard</h1>
+<p class="subtitle">Top Warriors of this month</p>
+<div class="podium-wrap"><div class="podium" id="podium"></div></div>
+<div class="table-wrap">
+  <div class="t-head"><span>#</span><span>Name</span><span>Referrals</span><span></span></div>
+  <div id="list"><div class="loading">Loading...</div></div>
+</div>
+<script>
+const DEVANAGARI = {'सावित्री':'Savitri','देवी':'Devi','सुभाष':'Subhash','युगेश्वरी':'Yugeshwari','साहू':'Sahu','प्रेम':'Prem','शंकर':'Shankar','पाण्डेय':'Pandey','हेमलता':'Hemlata','सरल':'Saral','मुरली':'Murali','बर्षा':'Barsha','अनिका':'Anika','सिंह':'Singh','शिवानी':'Shivani','दीक्षित':'Dixit'};
+
+function toEnglish(name) {
+  let r = name;
+  for(const [k,v] of Object.entries(DEVANAGARI)) r = r.replace(k,v);
+  return r;
+}
+
+function displayName(name) {
+  const n = toEnglish(name).trim();
+  const words = n.split(/\s+/);
+  // If first word is an initial (single letter + dot, like "K."), keep first 2 words
+  if(words.length >= 2 && /^[A-Za-z]\.$/.test(words[0])) {
+    return words[0] + ' ' + words[1] + ' ji';
+  }
+  return words[0] + ' ji';
+}
+
+function renderPodium(top3) {
+  const order = [top3[1], top3[0], top3[2]].filter(Boolean);
+  const medals = ['🥈','🥇','🥉'];
+  const cls = ['second','first','third'];
+  document.getElementById('podium').innerHTML = order.map((p,i)=>`
+    <div class="pod ${cls[i]}">
+      <div class="pod-medal">${medals[i]}</div>
+      <div class="pod-name">${displayName(p.name)}</div>
+      <div class="pod-ref">${p.total} referrals</div>
+      <a class="pod-link" href="${p.profile}" target="_blank">View profile</a>
+    </div>`).join('');
+}
+
+function renderList(data) {
+  const max = data[0] ? data[0].total : 1;
+  let html = '';
+  let shownSep = false;
+  data.slice(3).forEach((p,i)=>{
+    const rank = i+4;
+    if(!shownSep && p.total === 1) {
+      html += `<div class="sep">— 1 referral —</div>`;
+      shownSep = true;
+    }
+    const pct = Math.round((p.total/max)*100);
+    html += `<div class="t-row">
+      <div class="t-rank">${rank}</div>
+      <div class="t-name">${displayName(p.name)}</div>
+      <div>
+        <div class="t-ref-num">${p.total}</div>
+        <div class="t-bar"><div class="t-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div><a class="t-btn" href="${p.profile}" target="_blank">View profile</a></div>
+    </div>`;
+  });
+  document.getElementById('list').innerHTML = html || '<div class="loading">No data.</div>';
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').filter(l=>l.trim());
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  const header = lines[0].toLowerCase().split(sep).map(h=>h.trim());
+  const ni = header.findIndex(h=>h.includes('name'));
+  const pi = header.findIndex(h=>h.includes('profile'));
+  const ti = header.findIndex(h=>h.includes('total'));
+  return lines.slice(1).map(l=>{
+    const c = l.split(sep);
+    return {name:(c[ni]||'').trim(), profile:(c[pi]||'').trim(), total:parseInt(c[ti])||0};
+  }).filter(r=>r.name).sort((a,b)=>b.total-a.total);
+}
+
+const FALLBACK = [
+{name:'Abhishek Shukla',profile:'https://app.acharyaprashant.org/?id=11-u-633d81da-192a-416f-90f3-1b26f544bdf1',total:57},
+{name:'K. Sanju',profile:'https://app.acharyaprashant.org/?id=11-3a7e7652-cd51-4041-9ef7-35b2bba40313',total:32},
+{name:'GOVIND',profile:'https://app.acharyaprashant.org/?id=11-5c891a4e-ac23-4d9f-8cfe-d9c957cba5f9',total:11},
+{name:'Jagat Shahi',profile:'https://app.acharyaprashant.org/?id=11-u-16c064db-49d8-40a0-b3e9-094476c247a8',total:10},
+{name:'Shveta Sharma',profile:'https://app.acharyaprashant.org/?id=11-u-0b423cd8-1c2e-4bba-9488-ba261ff9f70c',total:7},
+{name:'Mahant Parvatdas',profile:'https://app.acharyaprashant.org/?id=11-u-737a86d2-1a39-49ee-972e-916c5317cdc4',total:7},
+{name:'Abhishek Nitish Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-b4dcf494-bbc0-44f1-a178-24a903e67505',total:6},
+{name:'Alok Upadhyay',profile:'https://app.acharyaprashant.org/?id=11-u-12d62e7b-9c75-48fa-93ef-e983058a5992',total:6},
+{name:'JAYDEV SHARMA',profile:'https://app.acharyaprashant.org/?id=11-0d240c5e-977c-4f94-90af-9d1419f7f354',total:5},
+{name:'Banty Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-35cd8090-c41c-496a-9bac-62697065b2b6',total:5},
+{name:'Kumar Suraj',profile:'https://app.acharyaprashant.org/?id=11-u-b5133ea4-92ff-4e1d-a1e3-0e253de4a426',total:5},
+{name:'Vandana',profile:'https://app.acharyaprashant.org/?id=11-u-b0b10ec4-340b-4d5e-8de6-7b2c50f1d4b5',total:5},
+{name:'सावित्री देवी',profile:'https://app.acharyaprashant.org/?id=11-u-ec5b774d-ec46-48be-bb7b-98b6dcebd4b4',total:5},
+{name:'Sanju mandiwal',profile:'https://app.acharyaprashant.org/?id=11-u-eb8f6a25-fd1d-400f-8ddb-1c774ec7d4a8',total:5},
+{name:'MAHENDRA PRATAP SINGH',profile:'https://app.acharyaprashant.org/?id=11-u-f2591405-2595-49c0-abf0-d4f13b341c88',total:5},
+{name:'BSC Aditya Singh Dinkar',profile:'https://app.acharyaprashant.org/?id=11-u-2ca52ff2-3785-4343-b854-f0e021750c8d',total:4},
+{name:'Lochan Pradhan',profile:'https://app.acharyaprashant.org/?id=11-u-fde949b9-5727-49fe-a0ab-96755ced8324',total:4},
+{name:'Dharmendra',profile:'https://app.acharyaprashant.org/?id=11-u-5e01573f-bd17-4123-811c-d65cad3501e5',total:4},
+{name:'Jitendra kumar Ojha',profile:'https://app.acharyaprashant.org/?id=11-u-53088c4c-1c0b-4575-a098-f487145d04ac',total:4},
+{name:'RAGHAVENDRA',profile:'https://app.acharyaprashant.org/?id=11-8c49ceb0-23de-4f9d-89d4-676102ca1d56',total:4},
+{name:'Shashank Shukla',profile:'https://app.acharyaprashant.org/?id=11-42a7fb88-cca7-4aa3-bfda-d0dde9d46f05',total:4},
+{name:'Manikant Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-183f145c-c9ff-42d6-9c85-c6e3c7b4bc61',total:4},
+{name:'garima chandel',profile:'https://app.acharyaprashant.org/?id=11-12146402-77d0-4d22-9e9b-066ddca00b01',total:4},
+{name:'Aryan gupta',profile:'https://app.acharyaprashant.org/?id=11-3f507d4a-e795-46a7-be40-267785ef097d',total:4},
+{name:'Deepak Aggarwal',profile:'https://app.acharyaprashant.org/?id=11-u-208e1467-c15a-4d58-a9a1-f0970c194bfe',total:4},
+{name:'Anita thapa',profile:'https://app.acharyaprashant.org/?id=11-u-4e479269-b721-4c31-8702-eef060a86327',total:4},
+{name:'Satya Pratap',profile:'https://app.acharyaprashant.org/?id=11-798f7be5-383f-4c27-86b1-076eb964b953',total:4},
+{name:'Rushikesh Dattatrya chavan',profile:'https://app.acharyaprashant.org/?id=11-u-9b4995c2-200b-4ae3-80aa-11b8ebde8851',total:4},
+{name:'Aniket Gulabrao Deshbhratar',profile:'https://app.acharyaprashant.org/?id=11-u-a4e12eda-b98a-4a0e-b613-ba3613e22385',total:3},
+{name:'Rohit patel',profile:'https://app.acharyaprashant.org/?id=11-u-02568ec2-5b71-4cd5-899b-1ddabfc33385',total:3},
+{name:'Sarvesh upadhyay',profile:'https://app.acharyaprashant.org/?id=11-u-f9d6147b-a421-4ffd-89bf-dee80ca45648',total:3},
+{name:'YOGITA RAJPUT',profile:'https://app.acharyaprashant.org/?id=11-9f0e1f1e-0dd3-4408-8ea9-a9120f06e333',total:3},
+{name:'Vishal Chauhan',profile:'https://app.acharyaprashant.org/?id=11-u-2b03f41e-ea70-4313-b23b-69c287c8a595',total:3},
+{name:'Priyanshu Poorvi',profile:'https://app.acharyaprashant.org/?id=11-u-8c9668ce-4c0c-453a-b21c-e8f5e1a2f761',total:3},
+{name:'Shashi',profile:'https://app.acharyaprashant.org/?id=11-u-c96f5466-6cbe-4418-9dee-6951d064be2f',total:3},
+{name:'Roopendra chandeliya',profile:'https://app.acharyaprashant.org/?id=11-8f3dcc37-9d81-4e8b-8fa4-96f7f4a71b33',total:3},
+{name:'Durga singaur',profile:'https://app.acharyaprashant.org/?id=11-u-803b9460-d503-4200-a891-98ef55ae92e7',total:3},
+{name:'Jyoti Kumari',profile:'https://app.acharyaprashant.org/?id=11-85778fac-7d96-4cfc-b826-cbb3928d1cf9',total:3},
+{name:'RAJLAXMI SHAW',profile:'https://app.acharyaprashant.org/?id=11-u-4347f38c-2244-499d-9db3-6abcd72066ec',total:3},
+{name:'KAVITA JAIN',profile:'https://app.acharyaprashant.org/?id=11-c129e663-e85b-48ae-b43e-388180121926',total:3},
+{name:'Om Prakash Pandey',profile:'https://app.acharyaprashant.org/?id=11-aefbbe9a-6db3-4077-a37a-1e17387a660d',total:3},
+{name:'Mithilesh Kumar pal',profile:'https://app.acharyaprashant.org/?id=11-u-a2a7672f-0bf1-44f5-b644-ad88b5f4d472',total:3},
+{name:'Tarun Bala',profile:'https://app.acharyaprashant.org/?id=11-u-ba9dfd23-c630-40fc-9feb-307f9c5ca480',total:3},
+{name:'SUNITA SAINI',profile:'https://app.acharyaprashant.org/?id=11-u-02ca1062-4c45-4f05-95e1-270ffa2a1248',total:3},
+{name:'Ankita Mishra',profile:'https://app.acharyaprashant.org/?id=11-u-6f210f06-530d-4221-808d-c1881d9c929f',total:3},
+{name:'Ankit kumar',profile:'https://app.acharyaprashant.org/?id=11-u-f7b27a53-5d22-4ba1-84eb-ea38fd97bb50',total:3},
+{name:'Raushan Kumar Raman',profile:'https://app.acharyaprashant.org/?id=11-3745bc45-c13b-4b25-bf0f-068bdfa89665',total:3},
+{name:'Niharika Datar',profile:'https://app.acharyaprashant.org/?id=11-u-30160047-0ec2-4f21-b5e1-e233995cea34',total:3},
+{name:'TAPAS LENKA',profile:'https://app.acharyaprashant.org/?id=11-u-5c574685-16e9-4f8f-b83e-f560686215ef',total:2},
+{name:'Deepak Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-2ed046dd-37f6-4ef5-ab05-c8d0e58e2c0a',total:2},
+{name:'Vineeta Malik',profile:'https://app.acharyaprashant.org/?id=11-u-2f7a6f10-3520-4bff-967e-3aa85f94b890',total:2},
+{name:'Shubhodeep Paul',profile:'https://app.acharyaprashant.org/?id=11-u-d2dae4b8-efc3-480a-a65e-dad3fb4ba523',total:2},
+{name:'arun',profile:'https://app.acharyaprashant.org/?id=11-u-5e9fdcc9-4e58-44f3-b8e9-af0f06e70cfd',total:2},
+{name:'Rahul Mondal',profile:'https://app.acharyaprashant.org/?id=11-u-58d402d5-2e68-4fbd-bb96-7b77078bd43a',total:2},
+{name:'Rajni Singh',profile:'https://app.acharyaprashant.org/?id=11-u-0da2d493-5f90-48b0-92c5-4bc0926b09d3',total:2},
+{name:'Vinay saini',profile:'https://app.acharyaprashant.org/?id=11-u-2e818632-1707-4237-99fe-6a5a419060f2',total:2},
+{name:'Ghazala',profile:'https://app.acharyaprashant.org/?id=11-u-81bc31f2-e479-4bb9-84de-d31baed9caa0',total:2},
+{name:'Neeta Mehta',profile:'https://app.acharyaprashant.org/?id=11-u-d16b011b-ce42-4856-911d-9999b4ec20c4',total:2},
+{name:'Dileep Vishwakarma',profile:'https://app.acharyaprashant.org/?id=11-u-93a54323-f191-42f6-9f98-6d322b8c53a2',total:2},
+{name:'Darpan',profile:'https://app.acharyaprashant.org/?id=11-u-37e89623-c4d2-48aa-a686-d44a24e9b5e8',total:2},
+{name:'Vivek Kumar',profile:'https://app.acharyaprashant.org/?id=11-cd506415-e825-426c-a944-bc265b8667e3',total:2},
+{name:'Mohan Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-ffb3eb42-650d-4c82-949f-3d11526e0521',total:2},
+{name:'CHITRA TIWARI',profile:'https://app.acharyaprashant.org/?id=11-u-2fbe627f-7c6c-4f01-9a8e-86a8258b7def',total:2},
+{name:'Siddhi Rani',profile:'https://app.acharyaprashant.org/?id=11-u-4e9787d9-3625-49f5-937c-8b3304fa558d',total:2},
+{name:'Liladhar',profile:'https://app.acharyaprashant.org/?id=11-u-7e40f16f-26ec-4f74-a4b2-5a4feb111927',total:2},
+{name:'Samyak Bouddh',profile:'https://app.acharyaprashant.org/?id=11-u-6dad9fe0-298e-4af0-96fc-1f9be0388e7c',total:2},
+{name:'सुभाष जी',profile:'https://app.acharyaprashant.org/?id=11-u-6a2fb05f-61dc-4727-a3c0-df34f11612e9',total:2},
+{name:'Dr Pradeep Roy',profile:'https://app.acharyaprashant.org/?id=11-u-156d0b63-3c13-4d9b-baee-2255b79d3e97',total:2},
+{name:'Chandrakant sahu',profile:'https://app.acharyaprashant.org/?id=11-u-f2e6a5d8-d7da-465f-9efe-e39b86158900',total:2},
+{name:'Mukesh Kumar',profile:'https://app.acharyaprashant.org/?id=11-61642836-964f-4f16-8969-e7a7d5e62e82',total:2},
+{name:'Vikrant Khedkar',profile:'https://app.acharyaprashant.org/?id=11-4292c647-86e4-4ea9-936d-70467e69f549',total:2},
+{name:'Jignesh Makwana',profile:'https://app.acharyaprashant.org/?id=11-u-1ec5f09b-f70b-402a-9648-6f0f114e3c5c',total:2},
+{name:'Lokesh Sharma',profile:'https://app.acharyaprashant.org/?id=11-3f5de90d-7193-4534-bfc5-89a1ce8e1997',total:2},
+{name:'Jivan Sharma',profile:'https://app.acharyaprashant.org/?id=11-u-f783f794-2397-4c8d-b446-8fd3beb758dd',total:2},
+{name:'Paleshwar Dewangan',profile:'https://app.acharyaprashant.org/?id=11-u-393243d6-3e62-49f4-9167-2d090221ddd0',total:2},
+{name:'Vikash Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-7f8f9ab9-0a42-4c9d-845f-c7571fe0a050',total:2},
+{name:'sarang kalambe',profile:'https://app.acharyaprashant.org/?id=11-u-6c7871cb-a3bf-456b-98a8-d74b83cbb36c',total:2},
+{name:'Pankaj Solanki',profile:'https://app.acharyaprashant.org/?id=11-u-1f3bf33b-784b-4d63-9e55-bb3744f960ef',total:2},
+{name:'Prahlad kumar',profile:'https://app.acharyaprashant.org/?id=11-u-1add00ce-e33d-4dd6-9c9f-84a735b31b54',total:2},
+{name:'rajni gupta',profile:'https://app.acharyaprashant.org/?id=11-u-300b2532-dfa6-4f32-8723-7aa878d4ff2f',total:2},
+{name:'Ladli Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-e0429277-c3c0-49db-acb0-18a5297c311a',total:2},
+{name:'Nandita Chauhan',profile:'https://app.acharyaprashant.org/?id=11-u-5ca4d9ac-f421-47be-a38a-6c7f21e61d94',total:2},
+{name:'Aanchal',profile:'https://app.acharyaprashant.org/?id=11-u-e0006ae4-1800-479c-9d21-9a8a2321ee69',total:2},
+{name:'Madhavi sahu',profile:'https://app.acharyaprashant.org/?id=11-u-7cc1541b-5cf7-4ab2-b8c6-41350a0b8d8c',total:2},
+{name:'Parth upadhyay',profile:'https://app.acharyaprashant.org/?id=11-u-721f9980-caea-4dd2-bd43-41776121ed1f',total:2},
+{name:'Avdhesh Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-a6a80477-d8b9-43b2-87ab-51b0d93963e7',total:2},
+{name:'Atul Raut',profile:'https://app.acharyaprashant.org/?id=11-u-40b19414-31ea-49bd-9cc6-7b2b36f6b0a4',total:2},
+{name:'Saurav Kumar',profile:'https://app.acharyaprashant.org/?id=11-ed146dfd-73ac-4aea-a7a3-eef4ca6576a2',total:2},
+{name:'MANMATH CHANDRA PADHY',profile:'https://app.acharyaprashant.org/?id=11-3e1cbc77-8190-403c-a7b5-d225f4f6829d',total:2},
+{name:'ASHUTOSH GAURAV',profile:'https://app.acharyaprashant.org/?id=11-u-72cd1192-8be1-49e0-855f-659ea7b46f97',total:2},
+{name:'Abhishek Chadar',profile:'https://app.acharyaprashant.org/?id=11-u-3ab25f71-2a79-4ab3-9149-5103fe939057',total:2},
+{name:'AVINASH SINGH',profile:'https://app.acharyaprashant.org/?id=11-b2d2a32b-bf29-4c4a-8032-ba3fdea629b2',total:2},
+{name:'PRASHANT SHARMA',profile:'https://app.acharyaprashant.org/?id=11-0d526b63-4895-499f-91d7-f0c7fdff9ae4',total:2},
+{name:'Manisha',profile:'https://app.acharyaprashant.org/?id=11-u-fe8f1909-39b6-4a3a-a465-e8ef0bffb84d',total:2},
+{name:'Kirti Vishwakarma',profile:'https://app.acharyaprashant.org/?id=11-u-70377c9d-d28d-407d-941f-a913fba1d1de',total:2},
+{name:'Shweta',profile:'https://app.acharyaprashant.org/?id=11-u-bd11a709-549f-4290-a55a-26479fec8c22',total:2},
+{name:'Archana',profile:'https://app.acharyaprashant.org/?id=11-u-b91b6b4f-bb97-4c62-8000-5ae42ef24cf8',total:2},
+{name:'Aryan',profile:'https://app.acharyaprashant.org/?id=11-u-47e3b7f0-7a3e-4b7e-97f6-5fcb84aa5964',total:2},
+{name:'Manika',profile:'https://app.acharyaprashant.org/?id=11-u-9e1a9158-4b92-42db-938e-3ae1d5723f19',total:2},
+{name:'RANI',profile:'https://app.acharyaprashant.org/?id=11-u-24ce389d-597c-4072-84e7-bfb1ccaae94a',total:2},
+{name:'Rupa kumari',profile:'https://app.acharyaprashant.org/?id=11-u-83cf6c7d-6c32-4464-a83d-6412f62f645a',total:2},
+{name:'Ravina',profile:'https://app.acharyaprashant.org/?id=11-u-7d493509-e414-4516-8808-cd126744df76',total:2},
+{name:'Jyoti Raj',profile:'https://app.acharyaprashant.org/?id=11-u-e2735caf-ee31-4dc2-83e4-cd5fc63c50fb',total:2},
+{name:'Hrishikesh Mondal',profile:'https://app.acharyaprashant.org/?id=11-u-0a4e18df-4b30-4be9-90c5-77c3bec07b50',total:2},
+{name:'Himanshu Mathure',profile:'https://app.acharyaprashant.org/?id=11-a6187046-68a9-4d7b-be6b-a0e2d7923c00',total:2},
+{name:'Urmila Walia',profile:'https://app.acharyaprashant.org/?id=11-u-c640af9b-0a80-4aa7-b056-ed4ad1d94a55',total:2},
+{name:'Neha Singhal',profile:'https://app.acharyaprashant.org/?id=11-u-d8f8824d-b2af-4325-aa58-e7645dc1a586',total:2},
+{name:'Amit',profile:'https://app.acharyaprashant.org/?id=11-u-7ee71da5-128b-40a6-a400-33d4c0014faa',total:2},
+{name:'Anshul Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-989dbb57-3d35-4e8c-97f0-cd6af8a668c3',total:2},
+{name:'Bhoomi',profile:'https://app.acharyaprashant.org/?id=11-u-12afbd87-75c2-48c7-b8c2-7e19eea53e02',total:2},
+{name:'DHARAMVEER SINGH',profile:'https://app.acharyaprashant.org/?id=11-u-c9b771dc-8d0e-4af0-923e-96742d25b791',total:2},
+{name:'Narendra Srivastava',profile:'https://app.acharyaprashant.org/?id=11-u-dd73ef94-8c2c-4306-9c87-620ad60e25ed',total:2},
+{name:'khushbu gupta',profile:'https://app.acharyaprashant.org/?id=11-u-46ecab9d-1e7f-4709-8d82-6bbaec4c11b9',total:2},
+{name:'SHAURYA PRATIT',profile:'https://app.acharyaprashant.org/?id=11-u-2aa6caac-c2b9-44aa-8bb1-c2ae479e88a7',total:2},
+{name:'Mukesh yadav',profile:'https://app.acharyaprashant.org/?id=11-u-aaf6d1c4-6f59-4a41-9416-e71bb41df1bb',total:2},
+{name:'Karan Rajkumar',profile:'https://app.acharyaprashant.org/?id=11-u-57a2e2e7-f38c-46bb-86e1-d0da7366d359',total:2},
+{name:'Subhash kumar',profile:'https://app.acharyaprashant.org/?id=11-u-916797d9-2b58-48d8-b68e-9650a3e08bd3',total:2},
+{name:'Suresh manik shinde',profile:'https://app.acharyaprashant.org/?id=11-u-3620e001-661a-4e0e-994b-1c39b7f51357',total:2},
+{name:'Shivam',profile:'https://app.acharyaprashant.org/?id=11-u-7d37c7d3-4ef7-437a-a71b-654b9b606720',total:2},
+{name:'Akash Srivastava',profile:'https://app.acharyaprashant.org/?id=11-u-612d1f6a-9c77-48fe-be7a-298edb2f8d00',total:2},
+{name:'Ritu Singh',profile:'https://app.acharyaprashant.org/?id=11-u-6ac9e07a-ec39-490a-b858-c7be4e4fe5ac',total:2},
+{name:'Jyoti Kumari',profile:'https://app.acharyaprashant.org/?id=11-0bf6d658-3866-4b40-bbe4-d970f70d7fbd',total:2},
+{name:'Sk gautam',profile:'https://app.acharyaprashant.org/?id=11-u-50752f02-922d-4949-a649-431d522c8609',total:2},
+{name:'Renu Purushottam',profile:'https://app.acharyaprashant.org/?id=11-u-0877539a-74f9-4385-9aa6-7ba253c53414',total:2},
+{name:'Poonam',profile:'https://app.acharyaprashant.org/?id=11-u-44b89c3f-dcb5-43e7-9dc8-9fbd0214b037',total:2},
+{name:'Sarvesh Chaturvedi',profile:'https://app.acharyaprashant.org/?id=11-u-bba07198-b851-4fe1-90ab-91812dff3bb5',total:2},
+{name:'DEEPAK KUMAR',profile:'https://app.acharyaprashant.org/?id=11-u-227a5b9b-2b9d-4ac5-a62c-ca8c522f832d',total:2},
+{name:'Surya Mohan',profile:'https://app.acharyaprashant.org/?id=11-u-37a89174-d0e3-4fd3-ae1d-deb96cc47f21',total:2},
+{name:'Rama poudel',profile:'https://app.acharyaprashant.org/?id=11-u-2cfa607f-3759-4161-9dcd-c2f4887c102d',total:2},
+{name:'Ankur',profile:'https://app.acharyaprashant.org/?id=11-53fd4f57-8a7c-469d-9011-dfd85219c675',total:2},
+{name:'Harish',profile:'https://app.acharyaprashant.org/?id=11-1c173341-9dff-4615-9dea-d6546bbb62ab',total:2},
+{name:'Garima',profile:'https://app.acharyaprashant.org/?id=11-u-67ea520e-ad63-4dc1-b89c-78d9a554de00',total:2},
+{name:'Vikas Verma',profile:'https://app.acharyaprashant.org/?id=11-u-98b91104-fe46-47fb-8208-7db054efe219',total:2},
+{name:'JYOTI',profile:'https://app.acharyaprashant.org/?id=11-88fd739e-8da3-448f-b7d2-355465ed58e1',total:2},
+{name:'Dr.Kirti Gahlot',profile:'https://app.acharyaprashant.org/?id=11-u-8eaa6f76-6a68-475e-9cdd-cadf167f6dbc',total:2},
+{name:'Manisha',profile:'https://app.acharyaprashant.org/?id=11-u-f3b89762-0038-4da2-80f2-3d30181f3c72',total:2},
+{name:'Inderpreet Singh',profile:'https://app.acharyaprashant.org/?id=11-u-35e1814d-7b67-486f-bee4-5ba7b8994e0a',total:2},
+{name:'Arjun Kumar Mahto',profile:'https://app.acharyaprashant.org/?id=11-u-117da028-90fc-4145-a988-710cecde28df',total:2},
+{name:'Anil Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-2074467c-4bda-4eb7-8911-6c248651d37b',total:2},
+{name:'Nishant',profile:'https://app.acharyaprashant.org/?id=11-u-76a3b181-d821-41d9-b5ed-102a13adc033',total:2},
+{name:'Ajay Singh Chauhan',profile:'https://app.acharyaprashant.org/?id=11-u-dc0fa7ab-a427-49c2-bc23-cc3e6091ada9',total:2},
+{name:'Prabhjot Singh',profile:'https://app.acharyaprashant.org/?id=11-0fe16e9e-8ca8-4781-92c9-42a79044e0ce',total:2},
+{name:'Priyanka Mahakur',profile:'https://app.acharyaprashant.org/?id=11-u-088b7146-53d5-4482-8bea-d96da13e2a8e',total:1},
+{name:'Sachin Kumar',profile:'https://app.acharyaprashant.org/?id=11-43234403-625e-4cc6-80e7-f016eb1bc553',total:1},
+{name:'RAJU VAIS',profile:'https://app.acharyaprashant.org/?id=11-u-6817e3f7-ba56-4057-93e7-3817f64c8902',total:1},
+{name:'Reena Chauhan',profile:'https://app.acharyaprashant.org/?id=11-c094333c-dd4f-4cbc-920f-9e5ffdeabd02',total:1},
+{name:'Aastha chaudhary',profile:'https://app.acharyaprashant.org/?id=11-u-dcff264d-90ac-477b-b485-e0f35afbfa81',total:1},
+{name:'Anshu Agarwal',profile:'https://app.acharyaprashant.org/?id=11-u-47a13987-9c1d-4035-bb73-3f95d072d732',total:1},
+{name:'Rajni kumari singh',profile:'https://app.acharyaprashant.org/?id=11-u-87abc473-195c-4d91-9ac0-d63b0fc6ee11',total:1},
+{name:'SURAJ KUMAR',profile:'https://app.acharyaprashant.org/?id=11-6053bc44-20c1-4e25-9e14-1807b9f008a4',total:1},
+{name:'Sanjay Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-885d7985-a979-49fd-abd7-ca9ec42d05e5',total:1},
+{name:'Vivek',profile:'https://app.acharyaprashant.org/?id=11-u-fe780fc2-c6fa-4871-8ca0-4b1873b873b3',total:1},
+{name:'Puja Singh',profile:'https://app.acharyaprashant.org/?id=11-u-cd91d1ae-81df-42a1-aa54-60ecd18a05c5',total:1},
+{name:'Rekha Devi',profile:'https://app.acharyaprashant.org/?id=11-u-dfb6d332-7514-487b-9d80-0c6660a4bf5b',total:1},
+{name:'Animesh Nautiyal',profile:'https://app.acharyaprashant.org/?id=11-993f104f-7a06-4f4f-ae80-72abb3a38c14',total:1},
+{name:'Vivek Wankhade',profile:'https://app.acharyaprashant.org/?id=11-u-d7669581-4bac-46a2-8f02-e51ad7a28bba',total:1},
+{name:'Baliram',profile:'https://app.acharyaprashant.org/?id=11-u-da1da214-797e-4029-a9fd-96854cfa529a',total:1},
+{name:'Sucharita Rana',profile:'https://app.acharyaprashant.org/?id=11-u-a0eb5c85-54dc-4b7b-bf72-ac8fa3ef9058',total:1},
+{name:'Deveshri Junghare',profile:'https://app.acharyaprashant.org/?id=11-u-82e18c27-2713-4031-86d7-5b563e346956',total:1},
+{name:'Dr. Manoj Sharma',profile:'https://app.acharyaprashant.org/?id=11-u-f85640af-4a8f-4728-87c0-0bbaa2fc2273',total:1},
+{name:'Lal babu sharma',profile:'https://app.acharyaprashant.org/?id=11-u-7999250e-ec02-47da-8a9c-161d41ddb8ee',total:1},
+{name:'Dhanwantri',profile:'https://app.acharyaprashant.org/?id=11-u-4d77ae0a-420e-47fd-8f11-3889f31c1bf4',total:1},
+{name:'Shivsharan Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-c8a37ae2-2f27-4ab6-bdaf-29e1e09c525c',total:1},
+{name:'Ishika Sahu',profile:'https://app.acharyaprashant.org/?id=11-u-32a7a9d4-4301-4b90-a701-3cc0f62c8507',total:1},
+{name:'UMANG THAKKER',profile:'https://app.acharyaprashant.org/?id=11-u-7f6bdda5-616c-45ca-80c3-7f2295f1ecf8',total:1},
+{name:'ADITYA GURJAR',profile:'https://app.acharyaprashant.org/?id=11-u-256a1c08-d19e-459b-8a79-83cc426fdf8a',total:1},
+{name:'Pranjal',profile:'https://app.acharyaprashant.org/?id=11-u-f3adb680-6e17-4819-94d1-b0f546ad1bee',total:1},
+{name:'Meenakshi',profile:'https://app.acharyaprashant.org/?id=11-u-2ebb9e92-dbda-4a22-a02f-b9a1b68a126e',total:1},
+{name:'Manish',profile:'https://app.acharyaprashant.org/?id=11-u-b97416b5-b7be-4f99-b3a2-727c1aa39fb2',total:1},
+{name:'Pooja choubey',profile:'https://app.acharyaprashant.org/?id=11-u-25ce2005-efbf-4242-a6b6-3d6866d23bea',total:1},
+{name:'Vansh',profile:'https://app.acharyaprashant.org/?id=11-u-191d64a3-2584-4485-a441-ac53a1a25fe5',total:1},
+{name:'Sneha Soni',profile:'https://app.acharyaprashant.org/?id=11-u-e32847c4-ac1f-430e-8595-e3b0499b10a2',total:1},
+{name:'Sawan Jajodia',profile:'https://app.acharyaprashant.org/?id=11-u-af75ed71-44f8-4eff-95f2-64424e816ede',total:1},
+{name:'Sakshi Thakur',profile:'https://app.acharyaprashant.org/?id=11-u-261b0e60-20c9-403b-a059-6adff707de57',total:1},
+{name:'Deva Dixit',profile:'https://app.acharyaprashant.org/?id=11-adf7ac3b-2592-4f7d-80f5-d6e62f376446',total:1},
+{name:'Devansh Narvariya',profile:'https://app.acharyaprashant.org/?id=11-b96f06e5-81f0-4a97-b5f4-4547468a8f7b',total:1},
+{name:'Poonam kumari',profile:'https://app.acharyaprashant.org/?id=11-u-01368c49-5684-4b66-a921-3dc6e4ada30e',total:1},
+{name:'Raunak',profile:'https://app.acharyaprashant.org/?id=11-u-935b2805-28a0-4e27-b646-880c751070f6',total:1},
+{name:'Rupesh Vasant Sarode',profile:'https://app.acharyaprashant.org/?id=11-u-6e6fd618-51db-47ff-adfd-72a2be499bdd',total:1},
+{name:'Vishwjit kumar',profile:'https://app.acharyaprashant.org/?id=11-u-6b97f1fc-77bf-4268-8c49-85f59a5e66f7',total:1},
+{name:'Saloni Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-a9d20e0a-3559-49b3-8f39-3b8f71212c5c',total:1},
+{name:'Niharika mishra',profile:'https://app.acharyaprashant.org/?id=11-u-e8bf4724-a1d2-48f8-81cb-46f4ea26cf1b',total:1},
+{name:'SACHIN KUMAR',profile:'https://app.acharyaprashant.org/?id=11-31a04449-4d1f-45f9-8e92-849385450019',total:1},
+{name:'ANJANA',profile:'https://app.acharyaprashant.org/?id=11-fc63cf73-6e52-4d3a-b4f9-7886cab4de8c',total:1},
+{name:'Yogesh',profile:'https://app.acharyaprashant.org/?id=11-u-88243675-614e-4736-8bb9-f046c89279a1',total:1},
+{name:'Rhythm dhakad',profile:'https://app.acharyaprashant.org/?id=11-u-bd931bc0-a971-4984-9010-6bb6785dc2c4',total:1},
+{name:'Bhavit Pandey',profile:'https://app.acharyaprashant.org/?id=11-u-ed5d3494-2a2f-452c-a1df-4bd40cd75e35',total:1},
+{name:'Ranjna tiwari',profile:'https://app.acharyaprashant.org/?id=11-u-293caca4-e07b-4237-af93-72b9a24a0c70',total:1},
+{name:'Krishan',profile:'https://app.acharyaprashant.org/?id=11-u-412f2c0c-f746-4717-8ce5-ca3ed1f2f98d',total:1},
+{name:'DEEPAK GHATOLE',profile:'https://app.acharyaprashant.org/?id=11-u-f7e6c8b8-323b-45cf-8e36-b308b6048d09',total:1},
+{name:'SUMIT KUMAR',profile:'https://app.acharyaprashant.org/?id=11-1fc4a916-a04a-4a81-8d75-ea0ac1e7f7f7',total:1},
+{name:'Ram pravesh',profile:'https://app.acharyaprashant.org/?id=11-u-fc081dfe-e3c1-49b1-b4fe-361b7fafa97b',total:1},
+{name:'Vishal',profile:'https://app.acharyaprashant.org/?id=11-u-9b62b118-37df-4e51-869e-f533bc097999',total:1},
+{name:'PRITY KUMARI',profile:'https://app.acharyaprashant.org/?id=11-u-2360cb40-f94a-4758-9305-067b2e648fc3',total:1},
+{name:'Harikishan Sahu',profile:'https://app.acharyaprashant.org/?id=11-u-d6fb6c61-2022-4f36-937c-327918cb73ad',total:1},
+{name:'Chanchal',profile:'https://app.acharyaprashant.org/?id=11-u-c302e275-fb99-45b6-9cbd-6e808e806e2e',total:1},
+{name:'Rachana',profile:'https://app.acharyaprashant.org/?id=11-u-9e726213-7a37-4f6c-82ba-08ecf88616f0',total:1},
+{name:'NEMI CHAND',profile:'https://app.acharyaprashant.org/?id=11-u-e6db37f8-d2de-4984-9d13-0b88fc29805d',total:1},
+{name:'Shirish Shrivastava',profile:'https://app.acharyaprashant.org/?id=11-u-37803e07-b1f2-4169-97ab-de4eb070f5e1',total:1},
+{name:'Nabin Kafle',profile:'https://app.acharyaprashant.org/?id=11-f32f16f9-d711-43d8-b6d7-8ff7440bcda7',total:1},
+{name:'Pratham Bhojawala',profile:'https://app.acharyaprashant.org/?id=11-u-1f25515c-008e-4718-abb7-3edbae9ece3c',total:1},
+{name:'युगेश्वरी साहू',profile:'https://app.acharyaprashant.org/?id=11-u-b589bab5-c83e-4670-a1ed-c1ca792469a9',total:1},
+{name:'Ravi',profile:'https://app.acharyaprashant.org/?id=11-u-f9aeea93-6125-4f4e-8527-eed39ab96913',total:1},
+{name:'Charu',profile:'https://app.acharyaprashant.org/?id=11-u-d9656823-e91f-4623-86f7-fa01f4a42e34',total:1},
+{name:'Maya',profile:'https://app.acharyaprashant.org/?id=11-u-37733d14-09d9-4850-a20f-c47e7fb9b7c0',total:1},
+{name:'Vikas jha',profile:'https://app.acharyaprashant.org/?id=11-u-597745ff-1d5a-46a0-ad19-f3dba4de5ac0',total:1},
+{name:'Vinay',profile:'https://app.acharyaprashant.org/?id=11-u-72943658-573d-4022-80b0-2ef29bdb4a21',total:1},
+{name:'Anchal Dua',profile:'https://app.acharyaprashant.org/?id=11-u-9a8e97da-6147-4953-a417-c495e039cc3a',total:1},
+{name:'Ranjeet Ray',profile:'https://app.acharyaprashant.org/?id=11-u-6b181769-c2b6-4465-80ad-95644acd04ae',total:1},
+{name:'Sachin kumar',profile:'https://app.acharyaprashant.org/?id=11-u-f316b983-b39f-4b8d-b28d-603ce1d4b7f5',total:1},
+{name:'SANJAY',profile:'https://app.acharyaprashant.org/?id=11-u-5f93514d-eee8-404c-bb1b-404b58b5172d',total:1},
+{name:'Saurabh Pratap Singh',profile:'https://app.acharyaprashant.org/?id=11-u-b4e966d3-f527-46d5-93ff-12b20e6c9ee2',total:1},
+{name:'Kanchan Gupta',profile:'https://app.acharyaprashant.org/?id=11-u-a12cf685-2ee2-4a5f-813f-49dbac765021',total:1},
+{name:'Smriti',profile:'https://app.acharyaprashant.org/?id=11-u-43eb691a-9a96-4630-a037-193077ccb6c5',total:1},
+{name:'LANKUSH BATHAM',profile:'https://app.acharyaprashant.org/?id=11-4436a70b-9d56-4008-bd95-187f65b91994',total:1},
+{name:'MINARVA',profile:'https://app.acharyaprashant.org/?id=11-u-21de5116-3372-4bdc-804e-73f28316bb0d',total:1},
+{name:'Rupesh Gupta',profile:'https://app.acharyaprashant.org/?id=11-u-f623e71b-4802-4f15-8903-dce1e6054af5',total:1},
+{name:'Chitra Agrawal',profile:'https://app.acharyaprashant.org/?id=11-u-ae18c087-34b6-46c3-983f-763a238d7fa3',total:1},
+{name:'Savan Paradava',profile:'https://app.acharyaprashant.org/?id=11-6c1f07af-1be0-486b-af51-65ec13f1abd9',total:1},
+{name:'SHALINI KUMARI',profile:'https://app.acharyaprashant.org/?id=11-u-e8ecf54d-1983-4a3b-9da7-3dbeade86227',total:1},
+{name:'Rajpal Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-ff47ec0d-06d9-43ac-9f45-e4d371c0f1fd',total:1},
+{name:'Shubham Gurung',profile:'https://app.acharyaprashant.org/?id=11-03f2497e-14cb-4a4a-9609-781e5baf05dc',total:1},
+{name:'Anand Sahu',profile:'https://app.acharyaprashant.org/?id=11-u-ac70d409-505e-4547-a303-ae8c68a7bef6',total:1},
+{name:'Pragnesh Vala',profile:'https://app.acharyaprashant.org/?id=11-u-024c5d60-6a72-41ad-b841-d71d8c4cb448',total:1},
+{name:'Poonam Gupta',profile:'https://app.acharyaprashant.org/?id=11-u-015a5ecb-3f31-43ec-8c0d-bef2eeaeebf8',total:1},
+{name:'RISHI JAIN',profile:'https://app.acharyaprashant.org/?id=11-u-d3cf1762-3852-4aa5-adcd-0e55228d99a8',total:1},
+{name:'Sourabh Singh',profile:'https://app.acharyaprashant.org/?id=11-u-9f536fd3-b5e0-40cd-b962-d727247a11e4',total:1},
+{name:'Jai karan dutt',profile:'https://app.acharyaprashant.org/?id=11-u-d432f2ca-f1a3-4f75-b2f9-65254b58e21d',total:1},
+{name:'Ajay Rathode',profile:'https://app.acharyaprashant.org/?id=11-u-b6c42820-cf05-422b-b115-4f9f57e8b319',total:1},
+{name:'Pankaj Kumar Sharma',profile:'https://app.acharyaprashant.org/?id=11-u-c08b76a7-6d22-4b73-a7d5-10a95d103e26',total:1},
+{name:'Naincy arya',profile:'https://app.acharyaprashant.org/?id=11-u-a9bd1e49-d3bd-4d31-8f8b-015174047e84',total:1},
+{name:'Susmita Mahato',profile:'https://app.acharyaprashant.org/?id=11-u-1cdd49b6-66e4-4e21-adc9-d37d03bd127c',total:1},
+{name:'Vibha Parikh',profile:'https://app.acharyaprashant.org/?id=11-u-14227f0e-0ffa-416e-a9bc-425e65888387',total:1},
+{name:'Abhishek Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-43f0a545-b42a-453b-8727-4de6d3d45526',total:1},
+{name:'Rishav',profile:'https://app.acharyaprashant.org/?id=11-u-20e89715-ca4e-41d9-b207-acfa1f192b64',total:1},
+{name:'Nishant Gupta',profile:'https://app.acharyaprashant.org/?id=11-u-4a20b021-3142-44ec-bb34-eb77a5d0c521',total:1},
+{name:'Poonam khera',profile:'https://app.acharyaprashant.org/?id=11-u-b5b56192-7b5b-4129-85a4-248708a70afc',total:1},
+{name:'Suman Kumar Barnwal',profile:'https://app.acharyaprashant.org/?id=11-u-bbbd2a81-0c17-41e0-8ce2-0c4e16ad7f47',total:1},
+{name:'Nishant Ranjan',profile:'https://app.acharyaprashant.org/?id=11-u-278c927c-18bf-4994-a953-fbd7d76580f7',total:1},
+{name:'rama',profile:'https://app.acharyaprashant.org/?id=11-u-0527d7d3-d40c-49fc-98e5-03037e0deed2',total:1},
+{name:'Neeta',profile:'https://app.acharyaprashant.org/?id=11-u-5f3aecce-0b13-4e1e-b0f1-3b8e524e3f9f',total:1},
+{name:'PAVAN VAGHELA',profile:'https://app.acharyaprashant.org/?id=11-u-34013b98-7f02-4cdc-840d-169e29da4392',total:1},
+{name:'Ruchika',profile:'https://app.acharyaprashant.org/?id=11-u-0869f0e0-278b-4b69-acd5-ebf518eb4873',total:1},
+{name:'Uma sailar',profile:'https://app.acharyaprashant.org/?id=11-u-a44c0c9b-3332-4e4f-9556-dadf3fa64e42',total:1},
+{name:'Deepak singh',profile:'https://app.acharyaprashant.org/?id=11-u-721eb7ce-4b76-48d7-8596-7d15a212e21e',total:1},
+{name:'Ajay Dabade',profile:'https://app.acharyaprashant.org/?id=11-u-c7fd3ec6-a3b7-46b1-8c76-9ad9813ded57',total:1},
+{name:'Priyanka',profile:'https://app.acharyaprashant.org/?id=11-u-88ef315f-c22c-4f26-875b-9a8382f9cb93',total:1},
+{name:'Lokesh kumar yadav',profile:'https://app.acharyaprashant.org/?id=11-u-7a1226c2-f80f-4d42-8a49-c97b0130871f',total:1},
+{name:'Hina Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-6f0f18cc-6a85-46cc-a78e-63fd7cc45c3f',total:1},
+{name:'Sonoo kumar',profile:'https://app.acharyaprashant.org/?id=11-u-6bfc3b05-870a-4715-8460-6af6cd5ae4f3',total:1},
+{name:'Ashutosh Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-073ade41-f6db-46b7-b8e9-3b0de1febf4a',total:1},
+{name:'Prince Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-81403a69-7a5e-4f22-a24a-dabf824f9efd',total:1},
+{name:'Chetana Karki',profile:'https://app.acharyaprashant.org/?id=11-u-47479d0d-39f1-4aa7-80d8-b2461808bffc',total:1},
+{name:'Anjali Barela',profile:'https://app.acharyaprashant.org/?id=11-u-17ca7ee2-a8ec-4bb8-9d6a-61e6d2c6c76a',total:1},
+{name:'Kunal Bhardwaj',profile:'https://app.acharyaprashant.org/?id=11-u-217b6f28-249d-4734-aba8-70cb1ba18c14',total:1},
+{name:'Gayatri Yogi',profile:'https://app.acharyaprashant.org/?id=11-u-58101e9c-db00-4288-9e17-ac54a2518158',total:1},
+{name:'Smruti swain',profile:'https://app.acharyaprashant.org/?id=11-u-b2c561c6-7681-46ba-871d-78e04b308386',total:1},
+{name:'Ginni jain',profile:'https://app.acharyaprashant.org/?id=11-u-20115cf5-4713-4e7d-87d4-c14fd58dc295',total:1},
+{name:'Shaurya Bhardwaj',profile:'https://app.acharyaprashant.org/?id=11-u-8cdf2f55-a150-4028-b2bd-dcdc351d62f1',total:1},
+{name:'Mansee Vishnoi',profile:'https://app.acharyaprashant.org/?id=11-u-f8ab7bc2-ec3f-4edb-ae62-85e6fdd04fd2',total:1},
+{name:'ROHIT GUPTA',profile:'https://app.acharyaprashant.org/?id=11-u-0f28d797-3666-4c9b-a911-02d3e369ae95',total:1},
+{name:'Priyanshu Mishra',profile:'https://app.acharyaprashant.org/?id=11-u-861e5223-2d4a-46bf-b1eb-a63b8c2243fc',total:1},
+{name:'Deepak Dhumal',profile:'https://app.acharyaprashant.org/?id=11-u-202bcfed-7179-4798-880f-e67cbc32d87d',total:1},
+{name:'Rahul Singh Pawar',profile:'https://app.acharyaprashant.org/?id=11-u-6f301af3-3537-46b8-b181-bfd651670c04',total:1},
+{name:'pramdeep yadav',profile:'https://app.acharyaprashant.org/?id=11-u-5f80dbdb-68ca-4efe-b9a3-08e9c08a1506',total:1},
+{name:'Neha',profile:'https://app.acharyaprashant.org/?id=11-u-f0469219-4880-411a-b0e7-4997359d65c1',total:1},
+{name:'Prakhar Mishra',profile:'https://app.acharyaprashant.org/?id=11-u-0118c164-49e7-4295-ae00-27491533bab2',total:1},
+{name:'Aman ff',profile:'https://app.acharyaprashant.org/?id=11-u-dde13f9c-c5ff-4683-b773-104fba6bef54',total:1},
+{name:'Ratnakar Tiwari',profile:'https://app.acharyaprashant.org/?id=11-u-5314a99d-4970-4ad7-828e-057e0245384c',total:1},
+{name:'Gulshan',profile:'https://app.acharyaprashant.org/?id=11-u-a0d2edc5-d166-4f61-aafc-a5a4120d42b4',total:1},
+{name:'Tushar Dewangan',profile:'https://app.acharyaprashant.org/?id=11-u-cffaafbf-7ad4-49d6-9462-4edc17c8547c',total:1},
+{name:'ANIRUDH KUMAR',profile:'https://app.acharyaprashant.org/?id=11-u-b1a91452-5d44-4080-ad77-d7f2c2d84807',total:1},
+{name:'Reshma',profile:'https://app.acharyaprashant.org/?id=11-u-2570cba8-7b0b-406e-bde6-17ee905d1269',total:1},
+{name:'Namita Santra',profile:'https://app.acharyaprashant.org/?id=11-u-360f3b7d-6e8a-4009-b549-31c43387fb5a',total:1},
+{name:'Ramesh Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-7ae04b23-6186-4ded-acd8-3536285cf8a5',total:1},
+{name:'Bharti Mehra',profile:'https://app.acharyaprashant.org/?id=11-u-a82b9526-2915-4d7f-9f29-851a8bb0bf9e',total:1},
+{name:'MrMankhush Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-d40bd657-5318-40a3-b21e-537049f1a9d1',total:1},
+{name:'Prashant yadav',profile:'https://app.acharyaprashant.org/?id=11-u-ab286ffb-b5fc-4858-8a2a-f1e85726f1f6',total:1},
+{name:'Krishna',profile:'https://app.acharyaprashant.org/?id=11-u-a198738b-fb9d-4e78-8b91-d176af9c36b4',total:1},
+{name:'Shubham Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-bf5744fd-fd3c-4435-b75f-6158107f7bd6',total:1},
+{name:'Shubham Parihar',profile:'https://app.acharyaprashant.org/?id=11-u-467da586-dc16-418e-be44-51c37eaee4f9',total:1},
+{name:'Abhilasha Thakur',profile:'https://app.acharyaprashant.org/?id=11-u-9366edd3-64b8-4e99-88ed-bc4b45a1fba7',total:1},
+{name:'Rinki Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-1eccd92b-21a1-47f4-8320-9c27a1484861',total:1},
+{name:'Madhu Shukla',profile:'https://app.acharyaprashant.org/?id=11-u-e97fd622-8230-4e77-b671-b66f5d60e8d6',total:1},
+{name:'BRIJESH AGRAWAL',profile:'https://app.acharyaprashant.org/?id=11-38f3d727-d33d-4cbb-bf7c-da7e3f27f7c6',total:1},
+{name:'Aradhana singh',profile:'https://app.acharyaprashant.org/?id=11-u-7b2c645c-3256-418f-ba7e-bfa94580e5ec',total:1},
+{name:'Abhi Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-c2a7d8e2-8a2b-41a1-9fcc-fac3056acb1b',total:1},
+{name:'Chandu',profile:'https://app.acharyaprashant.org/?id=11-u-33a07ee4-29f9-48d4-bd01-bbc547b903f6',total:1},
+{name:'प्रेम शंकर पाण्डेय',profile:'https://app.acharyaprashant.org/?id=11-u-33d5501b-7a23-4683-9dda-c7d1734cc011',total:1},
+{name:'Jatin Madnani',profile:'https://app.acharyaprashant.org/?id=11-u-2a03a72f-ab92-4579-9305-7f866c5ec41b',total:1},
+{name:'Upasna rawat',profile:'https://app.acharyaprashant.org/?id=11-u-c87759d7-bd49-42e7-8173-d967f12038a6',total:1},
+{name:'Anup Tiwari',profile:'https://app.acharyaprashant.org/?id=11-01edef26-2a80-4f66-b7a2-32f022da1cf7',total:1},
+{name:'Than singh',profile:'https://app.acharyaprashant.org/?id=11-u-56a6cd66-b756-49b8-ae2e-ba8fc0ec4a3a',total:1},
+{name:'Monika bisht',profile:'https://app.acharyaprashant.org/?id=11-u-01b64d16-f554-4ba8-90e6-bdae4109937c',total:1},
+{name:'Manish Sharma',profile:'https://app.acharyaprashant.org/?id=11-u-016bcf30-0919-4f42-ad7a-087a1f010609',total:1},
+{name:'SP Shiva',profile:'https://app.acharyaprashant.org/?id=11-u-ae8dd417-6171-4f1d-92b7-c8038999b458',total:1},
+{name:'Rukhsar Khatoon',profile:'https://app.acharyaprashant.org/?id=11-u-e4e65905-b514-4423-b8e5-8e8d74f942e0',total:1},
+{name:'Amar Shukla',profile:'https://app.acharyaprashant.org/?id=11-u-42d06d6c-c020-48cb-b832-f801fbab3cf6',total:1},
+{name:'Manish giri',profile:'https://app.acharyaprashant.org/?id=11-u-ead9a363-3fd0-4555-95a8-7f1c7ba663df',total:1},
+{name:'Manju kanwar',profile:'https://app.acharyaprashant.org/?id=11-u-781e2ff5-ce22-41f3-a37c-9039775c13fe',total:1},
+{name:'Vijay Thakur',profile:'https://app.acharyaprashant.org/?id=11-u-4f95fc21-73c7-426d-83b9-eb3880513f8c',total:1},
+{name:'Archna Pandey',profile:'https://app.acharyaprashant.org/?id=11-u-521bec49-f8ca-4607-b8d6-2811e53924dc',total:1},
+{name:'Deepa Gupta',profile:'https://app.acharyaprashant.org/?id=11-u-42205700-7e6e-4e04-8128-201dadec8549',total:1},
+{name:'Priya',profile:'https://app.acharyaprashant.org/?id=11-u-edc255f1-7ca9-4118-877c-bb1e947d91d1',total:1},
+{name:'Dinesh Meena',profile:'https://app.acharyaprashant.org/?id=11-2bc17fe5-27cd-446e-a841-37c1467767d2',total:1},
+{name:'Sushmita chauhan',profile:'https://app.acharyaprashant.org/?id=11-u-a14affdd-7547-4c08-931d-91742410ca50',total:1},
+{name:'Rameshwari sahu',profile:'https://app.acharyaprashant.org/?id=11-u-3dbd9695-1a32-4df2-b8c9-634a745744fc',total:1},
+{name:'Yogesh Yadav',profile:'https://app.acharyaprashant.org/?id=11-753bfc66-91ae-435a-8153-66bc8a855c19',total:1},
+{name:'Amit kumar',profile:'https://app.acharyaprashant.org/?id=11-u-2e63604b-4359-4541-97b8-f08d313071bc',total:1},
+{name:'Kamlesh Patel',profile:'https://app.acharyaprashant.org/?id=11-u-f8a7a8dc-64fb-48d7-93b3-2b161c554232',total:1},
+{name:'Arvind Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-f3a6763a-9f2e-4079-b08b-d646668cd70d',total:1},
+{name:'Roushani Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-21ec6547-112b-4376-b2dd-9841ea237686',total:1},
+{name:'Munni Gusain',profile:'https://app.acharyaprashant.org/?id=11-u-9ca37b24-1b6f-4c3c-a185-7eb4022e430a',total:1},
+{name:'ANJALI ARYA',profile:'https://app.acharyaprashant.org/?id=11-u-c8609ffb-9026-4faf-adba-165233c1f423',total:1},
+{name:'Saloni yadav',profile:'https://app.acharyaprashant.org/?id=11-u-8589d7da-0364-4d09-8460-8ffca9e3edf6',total:1},
+{name:'RAJNESH KUMAR',profile:'https://app.acharyaprashant.org/?id=11-u-283f0803-857f-434a-b77d-803b4925de84',total:1},
+{name:'Binny Bhatt',profile:'https://app.acharyaprashant.org/?id=11-u-a7c18bf3-9714-4a44-b903-fb7604a40f5c',total:1},
+{name:'Priya Das',profile:'https://app.acharyaprashant.org/?id=11-u-18f1009c-f51f-4d6e-bc75-337c48a89cfc',total:1},
+{name:'Shruti Juneja',profile:'https://app.acharyaprashant.org/?id=11-u-87e627c0-510b-4ae9-989c-23d6c5d6494f',total:1},
+{name:'ROHAN RATHOD',profile:'https://app.acharyaprashant.org/?id=11-u-a87125f7-f52a-4711-8507-1634efe86189',total:1},
+{name:'Raju mallik',profile:'https://app.acharyaprashant.org/?id=11-u-4a1e2c4e-1d3b-426d-997c-35b75a8ff563',total:1},
+{name:'Vikrant Atulkar',profile:'https://app.acharyaprashant.org/?id=11-u-c9c144ba-526a-4d08-8e42-d56df72c8de5',total:1},
+{name:'Sumitra Sagar',profile:'https://app.acharyaprashant.org/?id=11-u-617ef82d-80f5-432f-ba5e-90d535fab556',total:1},
+{name:'Triptmeet Kaur',profile:'https://app.acharyaprashant.org/?id=11-u-8b501ec4-0584-4cb1-a836-b4e1687ab8bd',total:1},
+{name:'Anita Kala',profile:'https://app.acharyaprashant.org/?id=11-u-f2a891a6-71de-4866-b315-c98632d857dc',total:1},
+{name:'Sadhana Mishra',profile:'https://app.acharyaprashant.org/?id=11-u-1941203d-8cd9-421c-8fa9-05445beb7a58',total:1},
+{name:'Sanjeev Pant',profile:'https://app.acharyaprashant.org/?id=11-5905b94b-6c8f-471b-834b-ac4f36ad97b7',total:1},
+{name:'Monika Dalmia',profile:'https://app.acharyaprashant.org/?id=11-u-f59d13e8-6070-4ec6-bbf9-a320a94b559b',total:1},
+{name:'Aklima Ahmed',profile:'https://app.acharyaprashant.org/?id=11-u-ccceb682-bea6-4215-8261-3fda5aff5951',total:1},
+{name:'Raja Dixit',profile:'https://app.acharyaprashant.org/?id=11-u-2e992a07-b1a0-487a-a649-4721bfffe81c',total:1},
+{name:'Shivani Santosh Chincholkar',profile:'https://app.acharyaprashant.org/?id=11-u-abcf9bb4-eaae-4274-b201-87b0d2717087',total:1},
+{name:'Shruti Patel',profile:'https://app.acharyaprashant.org/?id=11-u-de87bb33-d791-48ee-9c2d-772265a65fae',total:1},
+{name:'Himaashree Borah',profile:'https://app.acharyaprashant.org/?id=11-u-7305abc1-ec8d-4fcc-b97d-42b850cd2fb7',total:1},
+{name:'Bhanita Boro',profile:'https://app.acharyaprashant.org/?id=11-u-c32b98ba-e7d5-4312-bfd7-0286cbbd17c2',total:1},
+{name:'Minakshi Mathur',profile:'https://app.acharyaprashant.org/?id=11-u-c88d8eeb-f023-4635-9f4b-736b66ef0184',total:1},
+{name:'Priti Jadeja',profile:'https://app.acharyaprashant.org/?id=11-u-5287412a-141b-4bb3-8500-96b5faaf6ecf',total:1},
+{name:'Gaurav Shukla',profile:'https://app.acharyaprashant.org/?id=11-u-a9539c88-1235-4ebc-82fc-7b608a03bbca',total:1},
+{name:'Devendra',profile:'https://app.acharyaprashant.org/?id=11-u-4772deaa-c5ba-474e-877d-c6e3879ffdee',total:1},
+{name:'Harsh Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-51a8d402-0455-47a6-aac5-fcebbfa177de',total:1},
+{name:'NEHA MISHRA',profile:'https://app.acharyaprashant.org/?id=11-u-5628d56b-6d82-468d-92da-027d052a4597',total:1},
+{name:'Pooja mehta',profile:'https://app.acharyaprashant.org/?id=11-u-c8966e67-0028-4179-9fd7-a8c32fdd52a3',total:1},
+{name:'Kajal Bharti',profile:'https://app.acharyaprashant.org/?id=11-u-252911b9-47fe-4387-a877-5ab197fb27a7',total:1},
+{name:'Ayush Gupta',profile:'https://app.acharyaprashant.org/?id=11-72f96cba-3cb7-4601-b56e-bb82cf701f32',total:1},
+{name:'RASHMI BHARTI',profile:'https://app.acharyaprashant.org/?id=11-u-9e3243dc-0c69-4e9a-8cd5-d0da7b349315',total:1},
+{name:'Jyoti',profile:'https://app.acharyaprashant.org/?id=11-u-c119712e-bbb8-4fa7-962c-3ecc3d3f8ccb',total:1},
+{name:'Prince solanki',profile:'https://app.acharyaprashant.org/?id=11-u-116ed3ae-0f91-436c-8b2b-3af21e94260d',total:1},
+{name:'Rima Das',profile:'https://app.acharyaprashant.org/?id=11-u-bd76eab1-6d72-431c-b2cd-c5dcfc449441',total:1},
+{name:'Sunil Isharwal',profile:'https://app.acharyaprashant.org/?id=11-u-7a847d07-908f-45c2-8ea2-b2646de79c5b',total:1},
+{name:'Guddu kumar',profile:'https://app.acharyaprashant.org/?id=11-u-d33a4d4a-5b7a-482d-9e30-e4e1bb65129f',total:1},
+{name:'Anshika Verma',profile:'https://app.acharyaprashant.org/?id=11-u-1ce4deb9-d4d3-4f80-835f-0fb6723ec68d',total:1},
+{name:'Aarti Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-26eb0f1c-de97-4c15-b3ab-27ab4885e4ba',total:1},
+{name:'Aman Jangid',profile:'https://app.acharyaprashant.org/?id=11-u-c5a601ee-4f63-416b-b2e4-b910cd82aff6',total:1},
+{name:'naveen kumar',profile:'https://app.acharyaprashant.org/?id=11-u-b34a0ae0-5daa-49c2-962a-9086da2c0b22',total:1},
+{name:'Dr. Surabhi R Maurya',profile:'https://app.acharyaprashant.org/?id=11-u-030a8dd0-95bf-4564-af49-2c72ad21c0d9',total:1},
+{name:'Riya Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-9aa18958-7894-4513-bcf7-87707e4b5843',total:1},
+{name:'Annpurna mishra',profile:'https://app.acharyaprashant.org/?id=11-u-f5b126d0-313b-4f0b-8c85-bbaf3a39c8b2',total:1},
+{name:'Rajesh',profile:'https://app.acharyaprashant.org/?id=11-u-bf2ac574-c3b4-4f1c-9522-2e472b017900',total:1},
+{name:'Ritesh Kumar Sharma',profile:'https://app.acharyaprashant.org/?id=11-u-174705a5-21f4-48a5-976e-2848040c106b',total:1},
+{name:'Meena Sehgal',profile:'https://app.acharyaprashant.org/?id=11-u-c5dce484-45ea-4d8f-9db1-9e5b58f2bfea',total:1},
+{name:'Pooja Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-5cac80fa-51ff-4192-8596-ae97b6968f55',total:1},
+{name:'Hemlata',profile:'https://app.acharyaprashant.org/?id=11-u-b8f81910-b884-4f14-a52a-05d6095fd059',total:1},
+{name:'शिवानी दीक्षित',profile:'https://app.acharyaprashant.org/?id=11-u-4874b25a-42a0-4506-83c4-7215afa13fc4',total:1},
+{name:'AYUSH KUMAR',profile:'https://app.acharyaprashant.org/?id=11-15d61225-34b7-4ff4-bdb4-4ba2bfa1b478',total:1},
+{name:'Pankaj Kaushik',profile:'https://app.acharyaprashant.org/?id=11-5d5cf3e3-1bf0-4c0e-a725-133329fe5850',total:1},
+{name:'Kavita verma',profile:'https://app.acharyaprashant.org/?id=11-u-ce3ecb61-d514-4c48-85fd-c672cf5ac4bf',total:1},
+{name:'Parmanand Vishwakarma',profile:'https://app.acharyaprashant.org/?id=11-u-e706b4c7-9597-4fab-92a4-98772ba7202b',total:1},
+{name:'Neha Mishra',profile:'https://app.acharyaprashant.org/?id=11-u-fdc62237-1c49-4106-9619-f1b07681f791',total:1},
+{name:'Pankaj singh koshle',profile:'https://app.acharyaprashant.org/?id=11-u-6d25c10a-9a51-47b7-91fc-43a2174a0c59',total:1},
+{name:'Shashi Chaudhary',profile:'https://app.acharyaprashant.org/?id=11-u-0f5161e8-7657-4ab6-9c4d-9cd949e5775c',total:1},
+{name:'Sita Ram',profile:'https://app.acharyaprashant.org/?id=11-u-8f47f9ec-044a-4d68-9cdb-49d30de2d6ef',total:1},
+{name:'Amit Dubey',profile:'https://app.acharyaprashant.org/?id=11-u-89a0b428-c7c2-4db6-8558-ce722bb1b75c',total:1},
+{name:'GEETA PATEL',profile:'https://app.acharyaprashant.org/?id=11-u-b27f012b-ea09-45bd-a5cc-6c41793ac92b',total:1},
+{name:'Nikki Tiwari',profile:'https://app.acharyaprashant.org/?id=11-u-1a2cd891-b724-495a-aed5-4cba0214ea60',total:1},
+{name:'Shivangi',profile:'https://app.acharyaprashant.org/?id=11-u-f2185838-6730-47c6-8a84-2dd7bb459f26',total:1},
+{name:'Payal Solanki',profile:'https://app.acharyaprashant.org/?id=11-u-51b60116-6bc6-4a3b-9dc6-28a71984876e',total:1},
+{name:'Rajan',profile:'https://app.acharyaprashant.org/?id=11-u-3cc4c4a1-28b5-48b2-a40d-22ba624fd0a8',total:1},
+{name:'Jayesh',profile:'https://app.acharyaprashant.org/?id=11-u-22facfe1-8678-4378-ba0d-3ab6d3b48c42',total:1},
+{name:'Himani',profile:'https://app.acharyaprashant.org/?id=11-u-efe0df31-2e09-42e3-9830-5ad50f8d6daf',total:1},
+{name:'Vignesh Ramachandran',profile:'https://app.acharyaprashant.org/?id=11-u-2f2fadd2-4ce1-4092-8301-a6e41cbb682a',total:1},
+{name:'Manika Nandy',profile:'https://app.acharyaprashant.org/?id=11-u-07de59d7-948c-47ea-a4fd-cafcd6371385',total:1},
+{name:'Suraj Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-c6f86ed3-2fcc-42fa-9d02-46060e5b85d1',total:1},
+{name:'Sumit yadav',profile:'https://app.acharyaprashant.org/?id=11-u-01dee20c-a454-4f66-9919-463c50b2498f',total:1},
+{name:'Shashikant Sanodia',profile:'https://app.acharyaprashant.org/?id=11-u-4edb8da5-c846-4e7c-a6f0-ae3e4910b84a',total:1},
+{name:'Vinay Verma',profile:'https://app.acharyaprashant.org/?id=11-u-b07c2f4a-7795-465c-8dea-daf97163a2f2',total:1},
+{name:'Narayan Poudel',profile:'https://app.acharyaprashant.org/?id=11-u-a9974a07-f74f-487b-8bc6-c37aef598ca8',total:1},
+{name:'MADHURENDRA',profile:'https://app.acharyaprashant.org/?id=11-6fca7e2a-3430-46f2-82df-a286af4c1aee',total:1},
+{name:'Akash',profile:'https://app.acharyaprashant.org/?id=11-u-a8cf37ce-a553-4cac-8762-32e7f1a0be44',total:1},
+{name:'DIVAKAR PANDEY',profile:'https://app.acharyaprashant.org/?id=11-u-4f7ccc16-981d-4854-b4e3-99f3fa9c67d3',total:1},
+{name:'Kashan Intekhab',profile:'https://app.acharyaprashant.org/?id=11-u-d51b3437-0f7f-45a9-b4f1-49efbeca1669',total:1},
+{name:'Preeti Priyadarshini',profile:'https://app.acharyaprashant.org/?id=11-u-36870a74-f75c-49d3-ad3e-bc497e14af0f',total:1},
+{name:'Ramkishan Phogat',profile:'https://app.acharyaprashant.org/?id=11-a330706f-8db0-4561-ac19-374ee68956d9',total:1},
+{name:'Gopal Singh',profile:'https://app.acharyaprashant.org/?id=11-u-480aa5c7-5b47-4ce7-8e67-6df86def86b4',total:1},
+{name:'Devanshu Kumar',profile:'https://app.acharyaprashant.org/?id=11-63fb7000-5c52-4a28-9293-73b68f18aa38',total:1},
+{name:'Nirmala Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-add3625d-7e45-48e7-b5b6-7ff32262c331',total:1},
+{name:'Anju Aulakh',profile:'https://app.acharyaprashant.org/?id=11-0d1306bf-893e-4fc4-b025-eb6cf805ca74',total:1},
+{name:'Pankaj Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-0a01533e-a9e0-4757-8ccc-359bae57b6ce',total:1},
+{name:'Shanti',profile:'https://app.acharyaprashant.org/?id=11-u-f019549d-5d27-4b60-9b8d-c2b533a41f75',total:1},
+{name:'Vishal',profile:'https://app.acharyaprashant.org/?id=11-u-9f1c3dce-b761-400f-9cc2-5716173a17cd',total:1},
+{name:'Gurpreet Singh',profile:'https://app.acharyaprashant.org/?id=11-41d3acb0-dc99-4715-adfa-6b79386bb7d8',total:1},
+{name:'Reena khajuriya',profile:'https://app.acharyaprashant.org/?id=11-u-e9481e86-240d-4041-ba1a-115d753504c3',total:1},
+{name:'Anjali Gurukul',profile:'https://app.acharyaprashant.org/?id=11-u-72103c25-8262-40d9-a1e4-c41de5d30fab',total:1},
+{name:'Shivam Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-68406c6d-fea1-44c9-a5a9-8298df0e4626',total:1},
+{name:'Simran',profile:'https://app.acharyaprashant.org/?id=11-b00cf4ae-6eeb-47b8-a949-5fbffdc4844d',total:1},
+{name:'Manu Sharma',profile:'https://app.acharyaprashant.org/?id=11-u-f2297ae0-330b-462c-b1a1-47797c8089ab',total:1},
+{name:'Anisha',profile:'https://app.acharyaprashant.org/?id=11-u-4649b126-7ff9-4da1-91d0-31d754e16fd0',total:1},
+{name:'Vishal Gautam',profile:'https://app.acharyaprashant.org/?id=11-u-df010bd3-28cf-44dd-95b8-7379ea380970',total:1},
+{name:'Nikita',profile:'https://app.acharyaprashant.org/?id=11-u-5424a46f-724e-4310-9f97-bd000d195e93',total:1},
+{name:'Praveen YADAV',profile:'https://app.acharyaprashant.org/?id=11-u-a54d47e4-38d9-456b-b616-6b83d359b29f',total:1},
+{name:'Neelam soni',profile:'https://app.acharyaprashant.org/?id=11-u-52242488-36be-4063-ae4f-f3a6c53a8876',total:1},
+{name:'Pratibha',profile:'https://app.acharyaprashant.org/?id=11-u-7a1eca5a-fbee-45b7-b951-74e2936f0025',total:1},
+{name:'Sangeeta Rai',profile:'https://app.acharyaprashant.org/?id=11-u-2cea98c4-df6a-48b9-91d8-32bc83219b12',total:1},
+{name:'Ruchi Sharma',profile:'https://app.acharyaprashant.org/?id=11-u-7fb7b1f4-a289-4fba-82a9-6f4166cc7289',total:1},
+{name:'Mahi Mishra',profile:'https://app.acharyaprashant.org/?id=11-u-8a9c0d1a-1612-496f-be8d-5de869c94301',total:1},
+{name:'Puja',profile:'https://app.acharyaprashant.org/?id=11-74af9492-e42f-40c7-b1c3-8bcc9f1e21b8',total:1},
+{name:'Ravi Kumar Sahu',profile:'https://app.acharyaprashant.org/?id=11-u-f0778a3a-5cab-453a-9ab3-9053a1fb2b10',total:1},
+{name:'Gauri',profile:'https://app.acharyaprashant.org/?id=11-u-d5e2e177-ab98-4a22-a859-cd36c5feb363',total:1},
+{name:'Kimaya Shinde',profile:'https://app.acharyaprashant.org/?id=11-u-4494164f-e89d-4c5d-bee3-99233d12c1be',total:1},
+{name:'Devendra Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-872ea410-6a0b-43ba-810c-b4864d744b35',total:1},
+{name:'Babita Singh',profile:'https://app.acharyaprashant.org/?id=11-u-b580f61f-107c-4b78-be50-8524650a09c4',total:1},
+{name:'Chandan rajak',profile:'https://app.acharyaprashant.org/?id=11-u-da1add1f-4562-4c92-9f1a-e854c724b2df',total:1},
+{name:'Gaurav Gupta',profile:'https://app.acharyaprashant.org/?id=11-u-3ad359ec-e2ee-46cb-bdd9-9268a8231f83',total:1},
+{name:'Bahadur Singh Gocher',profile:'https://app.acharyaprashant.org/?id=11-u-a6176251-c666-4b33-9dbd-4b6caaf6825c',total:1},
+{name:'Priya Gurjar',profile:'https://app.acharyaprashant.org/?id=11-u-77466c7f-745b-4918-8bbb-cdf87056de0e',total:1},
+{name:'Amish Khurana',profile:'https://app.acharyaprashant.org/?id=11-u-6b493d85-18df-4c98-a28d-1ffc659b53c8',total:1},
+{name:'Rani Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-0182c794-ae24-407d-8fe8-dd52dde4d2df',total:1},
+{name:'Priti Ranjan',profile:'https://app.acharyaprashant.org/?id=11-u-8368fa78-ccb3-4051-8a97-2c9820fb8210',total:1},
+{name:'Sushmita Chaudhary',profile:'https://app.acharyaprashant.org/?id=11-u-050ff70d-afe3-42a6-9c14-0b470cf1b23b',total:1},
+{name:'SANTOSH KUMAR',profile:'https://app.acharyaprashant.org/?id=11-u-d5e7d294-2cc5-43a0-bc90-2df2d3f0a5cc',total:1},
+{name:'Aasna',profile:'https://app.acharyaprashant.org/?id=11-u-aa5427d1-7939-4794-92b9-cc219f5a177c',total:1},
+{name:'Ananya Singh',profile:'https://app.acharyaprashant.org/?id=11-u-864ff80a-f9a2-4b7f-8f24-63dddc21cb29',total:1},
+{name:'Nisha yadav',profile:'https://app.acharyaprashant.org/?id=11-u-10789b67-e089-4e58-ae10-da0f8fff9f69',total:1},
+{name:'Ruby Gautam',profile:'https://app.acharyaprashant.org/?id=11-u-54514925-8266-4379-8382-ad1ebce70b95',total:1},
+{name:'Gayatri Banothe',profile:'https://app.acharyaprashant.org/?id=11-u-da96a8da-5fdd-48c2-8c5e-0d652ca08414',total:1},
+{name:'Rajesh',profile:'https://app.acharyaprashant.org/?id=11-u-420793f0-5e1d-42dc-8d9e-bf0fba8cef32',total:1},
+{name:'Ruprekha deka',profile:'https://app.acharyaprashant.org/?id=11-u-137a7cea-4b4c-4892-8356-82fcdb195165',total:1},
+{name:'Sameer',profile:'https://app.acharyaprashant.org/?id=11-u-1d19014e-b7b4-4f79-96a4-eabf132d88a3',total:1},
+{name:'Suresh Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-2892d447-8cf3-4ade-9a1f-cdcee0689edb',total:1},
+{name:'Mamta Jangra',profile:'https://app.acharyaprashant.org/?id=11-u-d76dca91-6f4c-48e9-891d-d1c4f9037d45',total:1},
+{name:'Gaurav Bisht',profile:'https://app.acharyaprashant.org/?id=11-u-021cae50-9691-4bf5-b354-05076875dced',total:1},
+{name:'Samarth Kashyap',profile:'https://app.acharyaprashant.org/?id=11-u-690977bd-a779-49e7-8cf3-131971951fd7',total:1},
+{name:'Bhaskar Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-fda2decc-55d2-4d20-aa34-8c812f5c4d78',total:1},
+{name:'HIMANSHU VERMA',profile:'https://app.acharyaprashant.org/?id=11-u-c2b76a2f-2357-4edf-b92d-841a4b58cb2d',total:1},
+{name:'Prasanna Kumar Nayak',profile:'https://app.acharyaprashant.org/?id=11-u-105d3fae-d466-4215-b183-f6c3e9fffb1f',total:1},
+{name:'Shreya Baid',profile:'https://app.acharyaprashant.org/?id=11-u-420bebac-1ed6-49e5-9874-ecd221a633a1',total:1},
+{name:'Pooja Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-b335554a-9e08-48e1-8204-c80d1a9e5684',total:1},
+{name:'Kshitij Jha',profile:'https://app.acharyaprashant.org/?id=11-u-86ba820e-f986-4f4f-ad29-5c9621683670',total:1},
+{name:'Kunal Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-5f98c4fe-00d7-4441-8256-ece8b907cd09',total:1},
+{name:'Sahil Kapoor',profile:'https://app.acharyaprashant.org/?id=11-u-9222d452-1327-472a-97b4-bd7fe63d197e',total:1},
+{name:'Vivek Patel',profile:'https://app.acharyaprashant.org/?id=11-u-e9d62b4c-ae97-4d2d-b4a5-5b9579d13efc',total:1},
+{name:'Nandini Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-51969fdc-b7bf-47ec-9f2c-47d207ef3995',total:1},
+{name:'Pushpa Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-37125e3d-3490-4ee9-a767-e58a8e814529',total:1},
+{name:'Radhika',profile:'https://app.acharyaprashant.org/?id=11-u-1651f56c-02be-4528-9128-32da64b422cd',total:1},
+{name:'Manish Joshi',profile:'https://app.acharyaprashant.org/?id=11-u-df5f56f9-afb0-4d4b-acc6-84659fa2b519',total:1},
+{name:'Nitu Gupta',profile:'https://app.acharyaprashant.org/?id=11-u-63a2f629-9094-41c2-bf62-5c0b3bb67e2f',total:1},
+{name:'Monika',profile:'https://app.acharyaprashant.org/?id=11-u-f7665f6c-0c3a-4568-8586-30e0c2b72bd8',total:1},
+{name:'SNEHA MAYEKAR',profile:'https://app.acharyaprashant.org/?id=11-u-8675c205-cb9a-48cb-88d9-8af1e8b6c5bf',total:1},
+{name:'rakesh shankar',profile:'https://app.acharyaprashant.org/?id=11-u-b81d56ac-e6b2-4feb-8b36-066580de7f5d',total:1},
+{name:'Ranjeet Kumar',profile:'https://app.acharyaprashant.org/?id=11-e6063be9-9632-4541-b251-71958c2ad3f7',total:1},
+{name:'Dr Jyoti Singh',profile:'https://app.acharyaprashant.org/?id=11-u-1cd81c5b-c9c3-41c0-8068-0532a4e7844d',total:1},
+{name:'SUMIT YADAV',profile:'https://app.acharyaprashant.org/?id=11-f4d73e58-8597-46d9-b975-a13a94d065f6',total:1},
+{name:'Mohit kumar',profile:'https://app.acharyaprashant.org/?id=11-u-f7571813-fe83-4986-b72a-8a4d164ad2a3',total:1},
+{name:'Rakesh Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-bece396a-bd53-43ff-a1c0-4928d3d2a8da',total:1},
+{name:'Ram Nivas Verma',profile:'https://app.acharyaprashant.org/?id=11-u-ae023e2b-d579-4a0f-8cc9-a680bc50212d',total:1},
+{name:'Mausam Kumari',profile:'https://app.acharyaprashant.org/?id=11-u-9acd245d-7c52-4d21-bc6f-361d35415866',total:1},
+{name:'Krishna Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-507e9e15-312d-41fb-aee9-dda163cc2280',total:1},
+{name:'Mohit Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-3abd88bc-8689-40ae-8885-5d72dba12c61',total:1},
+{name:'Akshay Nimbhorkar',profile:'https://app.acharyaprashant.org/?id=11-u-fc9a96eb-3906-4425-9f37-4525dc58b6af',total:1},
+{name:'Ravi patel',profile:'https://app.acharyaprashant.org/?id=11-u-9b3853d8-2a35-43d7-a232-471fb23cbae2',total:1},
+{name:'Nagendra Debnath',profile:'https://app.acharyaprashant.org/?id=11-u-7fd952f4-d300-4651-9e9e-309c632723e9',total:1},
+{name:'Ansuman Padhy',profile:'https://app.acharyaprashant.org/?id=11-u-02454496-9416-4dcb-8096-bad0c3bc1259',total:1},
+{name:'Ashish Choudhary',profile:'https://app.acharyaprashant.org/?id=11-u-dd70fe19-ef27-45cd-ae4c-01c5d4f5d751',total:1},
+{name:'Akriti kumari',profile:'https://app.acharyaprashant.org/?id=11-u-921caf42-c975-4eb1-ab23-33180af57cef',total:1},
+{name:'Abhinav pathak',profile:'https://app.acharyaprashant.org/?id=11-u-00ba1c85-07b7-4914-a31a-60b3512f6c46',total:1},
+{name:'Himanshu Garg',profile:'https://app.acharyaprashant.org/?id=11-u-d1f54d2e-9710-4fec-9b01-bedd6f9c28d2',total:1},
+{name:'Rohit Patel',profile:'https://app.acharyaprashant.org/?id=11-76dac7ff-0772-4533-851e-54ae6e6d5d00',total:1},
+{name:'Anamika Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-13a34ce9-71d6-42f9-bb46-a32176c8fa16',total:1},
+{name:'Aman Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-c74b72d8-afad-4c3e-8978-e576d2b93545',total:1},
+{name:'Bhawana Negi',profile:'https://app.acharyaprashant.org/?id=11-u-6bb15f9c-d379-4fd2-8215-911d1ed7bbec',total:1},
+{name:'Kumar Vishal',profile:'https://app.acharyaprashant.org/?id=11-u-14829674-a402-4cf9-8ed9-2f6ed3c8ab93',total:1},
+{name:'Joyeta Hazra',profile:'https://app.acharyaprashant.org/?id=11-u-6c2c296f-c823-4519-8d85-02dab4fb8274',total:1},
+{name:'Preeti Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-260754d4-1151-44bd-bc81-1567ce72bd65',total:1},
+{name:'ANKIT SHARMA',profile:'https://app.acharyaprashant.org/?id=11-u-9ef5a65c-593e-456f-a367-8075aab59c37',total:1},
+{name:'Murari Kumar',profile:'https://app.acharyaprashant.org/?id=11-u-b3bc426f-c23d-493f-843a-47ec00fc50a4',total:1},
+{name:'Manjari Chaturvedi',profile:'https://app.acharyaprashant.org/?id=11-u-579a08f4-74dc-4727-9770-bb8be8b78675',total:1},
+{name:'AKASH SINGH',profile:'https://app.acharyaprashant.org/?id=11-u-815c605f-cef0-4460-aa44-5e1661b6fd46',total:1},
+{name:'Vishal Kushwah',profile:'https://app.acharyaprashant.org/?id=11-u-19c4a961-c88e-4bb5-8a2a-1cd3d28ae26b',total:1},
+{name:'Abhilasha Sonkar',profile:'https://app.acharyaprashant.org/?id=11-u-719a11c4-0ef9-49a4-82ec-230bd331d077',total:1},
+{name:'Vivek Yadav',profile:'https://app.acharyaprashant.org/?id=11-u-0b5de4c2-d21e-4e0a-a8a4-b531a6043e50',total:1},
+{name:'Biswajit Bakshi',profile:'https://app.acharyaprashant.org/?id=11-u-49fc30f6-0c79-4254-9c08-f6e1b5418665',total:1},
+{name:'Sonu sharma',profile:'https://app.acharyaprashant.org/?id=11-u-ba29e574-d1b8-42c1-8e8d-bc4c3257d701',total:1}
+];
+
+fetch('referrals.csv')
+  .then(r=>{ if(!r.ok) throw new Error(); return r.text(); })
+  .then(text=>{ const d=parseCSV(text); renderPodium(d); renderList(d); })
+  .catch(()=>{ renderPodium(FALLBACK); renderList(FALLBACK); });
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').filter(l=>l.trim());
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  const header = lines[0].toLowerCase().split(sep).map(h=>h.trim());
+  const ni = header.findIndex(h=>h.includes('name'));
+  const pi = header.findIndex(h=>h.includes('profile'));
+  const ti = header.findIndex(h=>h.includes('total'));
+  return lines.slice(1).map(l=>{
+    const c = l.split(sep);
+    return {name:(c[ni]||'').trim(), profile:(c[pi]||'').trim(), total:parseInt(c[ti])||0};
+  }).filter(r=>r.name).sort((a,b)=>b.total-a.total);
+}
+</script>
+</body>
+</html>
