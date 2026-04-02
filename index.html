@@ -87,14 +87,12 @@ function renderPodium(top3) {
 }
 
 function renderList(data) {
-  const max = data[0] ? data[0].total : 1;
   let html = '';
   let shownSep = false;
   let rank = 3;
   let prevTotal = data[2] ? data[2].total : null;
-  data.slice(3).forEach((p,i)=>{
-    if(p.total !== prevTotal) rank = i + 4;
-    prevTotal = p.total;
+  data.slice(3).forEach((p)=>{
+    if(p.total !== prevTotal) { rank++; prevTotal = p.total; }
     if(!shownSep && p.total === 1) {
       html += `<div class="sep">— 1 referral —</div>`;
       shownSep = true;
